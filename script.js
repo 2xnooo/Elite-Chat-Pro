@@ -1,10 +1,25 @@
 // script.js
 let username = localStorage.getItem('eliteUsername') || '';
-let users = JSON.parse(localStorage.getItem('eliteUsers')) || []; // قاعدة بيانات المستخدمين
-let messages = JSON.parse(localStorage.getItem('eliteMessages')) || [];
-let messageId = parseInt(localStorage.getItem('eliteMessageId')) || 0;
+let messages = []; // الرسائل المشتركة (تُحمل من السيرفر)
+let messageId = 0;
 let currentTheme = localStorage.getItem('eliteTheme') || 'dark';
 let searchTerm = '';
+let socket; // Socket.io
+
+// تهيئة Socket.io
+socket = io();
+
+// استقبال الرسائل من السيرفر
+socket.on('loadMessages', (loadedMessages) => {
+  messages = loadedMessages;
+  rebuildMessages();
+});
+
+socket.on('newMessage', (newMsg) => {
+  messages.push(newMsg);
+  addMessage(newMsg);
+  scrollToBottom();
+});
 
 // تطبيق الثيم
 document.body.className = currentTheme === 'light' ? 'light-theme' : '';
@@ -14,13 +29,12 @@ if (username) {
   loadChat();
 }
 
-// دوال مباشرة للأزرار (للعمل الفوري)
+// دوال الأزرار
 function toggleSearch() {
   const searchBox = document.getElementById('searchBox');
   searchBox.style.display = searchBox.style.display === 'block' ? 'none' : 'block';
-  if (searchBox.style.display === 'block') {
-    document.getElementById('searchInput').focus();
-  } else {
+  if (searchBox.style.display === 'block') document.getElementById('searchInput').focus();
+  else {
     searchTerm = '';
     rebuildMessages();
   }
@@ -29,7 +43,7 @@ function toggleSearch() {
 function exportChat() {
   if (!username) return alert('ادخل اسمك أولاً!');
   const dataStr = JSON.stringify(messages, null, 2);
-  const dataBlob = new Blob([dataStr], { type: 'application/json' });
+  const dataBlob = new Blob([dataStr], {type: 'application/json'});
   const url = URL.createObjectURL(dataBlob);
   const link = document.createElement('a');
   link.href = url;
@@ -78,15 +92,14 @@ function highlightSearch() {
 function handleMediaUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
-  
+
   if (file.size > 10 * 1024 * 1024) {
     alert('الملف كبير جداً!');
     event.target.value = '';
     return;
   }
-  
-  // رسالة تحميل فاخرة
-  const loadingId = ++messageId;
+
+  const loadingId = Date.now();
   const loadingMsg = {
     id: loadingId,
     text: `${username}: جاري التحميل... 💫`,
@@ -97,25 +110,26 @@ function handleMediaUpload(event) {
   };
   messages.push(loadingMsg);
   addMessage(loadingMsg);
-  
+
   const reader = new FileReader();
   reader.onload = (e) => {
     const index = messages.findIndex(m => m.id === loadingId);
     const mediaType = file.type.startsWith('image/') ? 'image' : 'video';
-    messages[index] = {
-      id: loadingId,
+    const newMsg = {
+      id: Date.now(),
       text: `${username}: ${mediaType === 'image' ? '🖼️ صورة فاخرة' : '🎥 فيديو مميز'}`,
       type: 'me',
       media: e.target.result,
       mediaType: mediaType,
-      time: loadingMsg.time,
-      timestamp: loadingMsg.timestamp
+      time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
+      timestamp: Date.now(),
+      username: username
     };
-    rebuildMessages();
-    scrollToBottom();
+    messages[index] = newMsg;
+    socket.emit('sendMessage', newMsg); // إرسال للسيرفر للمشاركة
+    event.target.value = '';
   };
   reader.readAsDataURL(file);
-  event.target.value = '';
 }
 
 function enterChat() {
@@ -125,25 +139,36 @@ function enterChat() {
     alert('أدخل اسمك الفاخر أولاً! 👑');
     return;
   }
-  
-  // تحقق من قاعدة البيانات للمستخدمين
-  if (users.includes(userName)) {
-    alert(`اسم المستخدم "${userName}" مستخدم حاليًا! اختر اسمًا آخر. 👑`);
-    return;
-  }
-  
-  // إضافة إلى قاعدة البيانات
-  users.push(userName);
-  localStorage.setItem('eliteUsers', JSON.stringify(users));
-  
-  username = userName;
-  localStorage.setItem('eliteUsername', username);
-  document.getElementById('usernameBox').style.display = 'none';
-  document.getElementById('messages').style.display = 'flex';
-  document.getElementById('inputs').style.display = 'flex';
-  document.querySelectorAll('#header-controls .control-btn').forEach(btn => btn.style.display = 'flex');
-  addSystemMessage(`مرحباً بـ ${username} في الغرفة الملكية! 👑✨`);
-  saveData();
+
+  // استدعاء API للتحقق
+  fetch(`/api/users/${userName}`)
+    .then(res => res.json())
+    .then(data => {
+      if (data.exists) {
+        alert(`اسم المستخدم "${userName}" مستخدم حاليًا! اختر اسمًا آخر. 👑`);
+        return;
+      }
+
+      // إضافة اليوزر
+      fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: userName })
+      }).then(res => res.json()).then(data => {
+        if (data.success) {
+          username = userName;
+          localStorage.setItem('eliteUsername', username);
+          document.getElementById('usernameBox').style.display = 'none';
+          document.getElementById('messages').style.display = 'flex';
+          document.getElementById('inputs').style.display = 'flex';
+          document.querySelectorAll('#header-controls .control-btn').forEach(btn => btn.style.display = 'flex');
+          addSystemMessage(`مرحباً بـ ${username} في الغرفة الملكية! 👑✨`);
+          saveData();
+        } else {
+          alert(data.message);
+        }
+      }).catch(err => alert('خطأ في التسجيل!'));
+    }).catch(err => alert('خطأ في الاتصال!'));
 }
 
 function sendMessage() {
@@ -153,18 +178,17 @@ function sendMessage() {
     alert('أدخل اسمك أولاً للإرسال! 👑');
     return;
   }
-  const msgObj = {
-    id: ++messageId,
+  const newMsg = {
+    id: Date.now(),
     text: `${username}: ${text}`,
     type: 'me',
     time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    username: username
   };
-  messages.push(msgObj);
-  addMessage(msgObj);
+  socket.emit('sendMessage', newMsg); // إرسال للسيرفر
   msgBox.value = '';
   msgBox.style.height = 'auto';
-  saveData();
 }
 
 function addMessage(msgObj) {
@@ -175,16 +199,16 @@ function addMessage(msgObj) {
   div.id = `msg-${msgObj.id}`;
   let contentHTML = msgObj.text;
   if (msgObj.media) {
-    const mediaElement = msgObj.mediaType === 'image' ?
-      `<img src="${msgObj.media}" alt="صورة" class="media-container" loading="lazy">` :
-      `<video src="${msgObj.media}" controls class="media-container" preload="metadata"></video>`;
+    const mediaElement = msgObj.mediaType === 'image' 
+      ? `<img src="${msgObj.media}" alt="صورة" class="media-container" loading="lazy">`
+      : `<video src="${msgObj.media}" controls class="media-container" preload="metadata"></video>`;
     contentHTML += mediaElement;
   } else if (msgObj.isLoading) {
     contentHTML += '<div class="video-loading"></div>';
   }
   div.innerHTML = `
     <div class="msg-actions">
-      ${msgObj.type === 'me' && !msgObj.media && !msgObj.isLoading ? `
+      ${msgObj.username === username && !msgObj.media && !msgObj.isLoading ? `
         <button class="msg-action" onclick="editMessage(${msgObj.id})" title="تعديل"><i class="fas fa-edit"></i></button>
         <button class="msg-action" onclick="deleteMessage(${msgObj.id})" title="حذف"><i class="fas fa-trash"></i></button>
       ` : ''}
@@ -198,24 +222,23 @@ function addMessage(msgObj) {
 
 function addSystemMessage(text) {
   const msgObj = {
-    id: ++messageId,
+    id: Date.now(),
     text,
     type: 'system',
     time: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
     timestamp: Date.now()
   };
-  messages.push(msgObj);
   addMessage(msgObj);
 }
 
 function editMessage(id) {
   const msg = messages.find(m => m.id === id);
-  if (!msg || msg.type !== 'me' || msg.media || msg.isLoading) return alert('لا يمكن التعديل!');
+  if (!msg || msg.username !== username || msg.media || msg.isLoading) return alert('لا يمكن التعديل!');
   const newText = prompt('عدل الرسالة:', msg.text.replace(`${username}: `, ''));
   if (newText && newText.trim()) {
     msg.text = `${username}: ${newText.trim()}`;
-    rebuildMessages();
-    saveData();
+    addMessage(msg); // إعادة إضافة المعدلة
+    socket.emit('sendMessage', msg); // تحديث للآخرين
   }
 }
 
@@ -223,7 +246,6 @@ function deleteMessage(id) {
   if (confirm('حذف الرسالة؟')) {
     messages = messages.filter(m => m.id !== id);
     rebuildMessages();
-    saveData();
   }
 }
 
@@ -236,15 +258,12 @@ function clearChat() {
   if (confirm('مسح الدردشة؟')) {
     messages = [];
     document.getElementById('messages').innerHTML = '';
-    messageId = 0;
-    localStorage.removeItem('eliteMessageId');
-    saveData();
     addSystemMessage('تم المسح! جاهز للجديد. ✨');
   }
 }
 
 function saveData() {
-  localStorage.setItem('eliteMessages', JSON.stringify(messages));
+  localStorage.setItem('eliteMessages', JSON.stringify(messages)); // حفظ محلي للرسائل (اختياري)
   localStorage.setItem('eliteMessageId', messageId.toString());
 }
 
@@ -258,7 +277,7 @@ function loadChat() {
   scrollToBottom();
 }
 
-// تحسين التمرير للجوال
+// تحسين التمرير
 document.addEventListener('DOMContentLoaded', () => {
   const msgInput = document.getElementById('msg');
   if (msgInput) {
@@ -273,19 +292,9 @@ document.addEventListener('DOMContentLoaded', () => {
       msgInput.style.height = Math.min(msgInput.scrollHeight, 120) + 'px';
     });
   }
-  
-  const messagesEl = document.getElementById('messages');
-  if (messagesEl) {
-    messagesEl.addEventListener('touchstart', () => {}, { passive: true }); // تحسين اللمس
-    messagesEl.addEventListener('scroll', () => {
-      if (messagesEl.scrollTop + messagesEl.clientHeight < messagesEl.scrollHeight - 100) {
-        // إظهار زر التمرير إلى الأسفل إذا لزم
-      }
-    });
-  }
-  
+
   if (username) {
     document.getElementById('inputs').style.display = 'flex';
   }
-  console.log('JS محمل! الأزرار جاهزة.'); // للتصحيح
+  console.log('JS محمل! الدردشة المشتركة جاهزة.');
 });
