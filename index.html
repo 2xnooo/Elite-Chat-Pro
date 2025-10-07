@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>💎 Elite Chat Pro</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="chat">
+    <div id="header">
+      <h1><i class="fas fa-crown"></i> Elite Chat Pro</h1>
+      <div id="header-controls">
+        <button class="control-btn" id="searchBtn" title="بحث في الرسائل" onclick="toggleSearch()"><i class="fas fa-search"></i></button>
+        <button class="control-btn" id="exportBtn" title="تصدير الدردشة" onclick="exportChat()"><i class="fas fa-download"></i></button>
+        <button class="control-btn" id="clearBtn" title="مسح الدردشة" onclick="clearChat()"><i class="fas fa-trash"></i></button>
+        <button class="control-btn" id="themeToggle" title="تبديل الثيم" onclick="toggleTheme()"><i class="fas fa-moon"></i></button>
+      </div>
+    </div>
+
+    <div id="searchBox">
+      <input type="text" id="searchInput" placeholder="ابحث في الرسائل..." oninput="searchMessages()">
+    </div>
+
+    <div id="usernameBox">
+      <i class="fas fa-user-plus" style="font-size: 4rem; color: var(--primary-gold); margin-bottom: 20px;"></i>
+      <input id="username" placeholder="أدخل اسمك الفاخر..." />
+      <button id="enterBtn" onclick="enterChat()">دخول الغرفة الملكية</button>
+    </div>
+
+    <div id="messages" style="display: none;"></div>
+
+    <div id="inputs">
+      <button id="mediaBtn" title="إرسال صورة أو فيديو" onclick="openMedia()"><i class="fas fa-camera"></i></button>
+      <textarea id="msg" placeholder="اكتب رسالتك الفاخرة... (Enter للإرسال)" rows="1"></textarea>
+      <button id="sendBtn" onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
+    </div>
+
+    <input type="file" id="mediaInput" accept="image/*,video/*" style="display: none;" onchange="handleMediaUpload(event)">
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
